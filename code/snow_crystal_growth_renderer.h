@@ -175,42 +175,42 @@ DrawCell(grid *Grid, image *Image, uvec2 CellIndex)
     Z = C1;
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleBottomFlat(Image, Color, X, Z, Y);
-    printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
+    //printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
     // T1
     X = C;
     Y = C1;
     Z = C2;
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleTopFlat(Image, Color, Z, Y, X);
-    printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
+    //printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
     // T2
     X = C;
     Y = C2;
     Z = C3;
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleBottomFlat(Image, Color, X, Z, Y);
-    printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
+    //printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
     // T3
     X = C;
     Y = C3;
     Z = C4;
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleTopFlat(Image, Color, Y, X, Z);
-    printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
+    //printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
     // T4
     X = C;
     Y = C4;
     Z = C5;
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleBottomFlat(Image, Color, X, Y, Z);
-    printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
+    //printf("draw bot: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", X.X, X.Y, Y.X, Y.Y, Z.X, Z.Y);
     // T5
     X = C;
     Y = C0;
     Z = C5;
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleTopFlat(Image, Color, X, Y, Z);
-    printf("draw top: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", Y.X, Y.Y, Z.X, Z.Y, X.X, X.Y);
+    //printf("draw top: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", Y.X, Y.Y, Z.X, Z.Y, X.X, X.Y);
 }
 
 void

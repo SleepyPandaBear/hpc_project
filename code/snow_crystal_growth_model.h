@@ -42,6 +42,11 @@ union ivec2
         i32 X;
         i32 Y;
     };
+    struct
+    {
+        u32 Row;
+        u32 Column;
+    };
     i32 E[2];
 };
 
