@@ -9,6 +9,7 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#define DRAW_CELL_BORDER
 #include "snow_crystal_growth_renderer.h"
 
 // TODO(miha): Grid
@@ -211,8 +212,9 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
                             if(Neighbour.Row < 0 || Neighbour.Row > PreviousGrid->Size || Neighbour.Column < 0 || Neighbour.Column > PreviousGrid->Size)
                                 continue;
-
                             cell NeighbourCell = GridElement(PreviousGrid, Neighbour.Row, Neighbour.Column);
+                            if(NeighbourCell.Type == EDGE)
+                                continue;
                             if(!IsReceptive(NeighbourCell))
                             {
                                 NeighbourDiffusion += NeighbourCell.Value;
@@ -235,6 +237,8 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                             if(Neighbour.Row < 0 || Neighbour.Row > PreviousGrid->Size || Neighbour.Column < 0 || Neighbour.Column > PreviousGrid->Size)
                                 continue;
                             cell NeighbourCell = GridElement(PreviousGrid, Neighbour.Row, Neighbour.Column);
+                            if(NeighbourCell.Type == EDGE)
+                                continue;
                             if(!IsReceptive(NeighbourCell))
                             {
                                 NeighbourDiffusion += NeighbourCell.Value;
@@ -275,6 +279,8 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                             if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid->Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
                                 continue;
                             cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
+                            if(NeighbourCell.Type == EDGE)
+                                continue;
                             if(!IsReceptive(NeighbourCell))
                                 CurrentGrid->Cells[Neighbour.Row*CurrentGrid->Size + Neighbour.Column].Type = BOUNDARY;
                         }
@@ -287,7 +293,7 @@ main(i32 ArgumentCount, char *ArgumentValues[])
             CurrentGrid = PreviousGrid;
             PreviousGrid = Temp;
 
-            if(Iteration > 60)
+            if(Iteration > 80)
                 Running = 0;
             Iteration++;
         }

@@ -98,6 +98,46 @@ DrawTriangleBottomFlat(image *Image, color Color, ivec2 P0, ivec2 P1, ivec2 P2)
     }
 }
 
+void
+DrawBorder(image *Image, color Color, ivec2 C0, ivec2 C1, ivec2 C2, ivec2 C3, ivec2 C4, ivec2 C5)
+{
+    // NOTE(miha): Slope between C0 and C1.
+    f32 InverseSlope0 = ((f32)C0.X - C1.X) / ((f32)C0.Y - C1.Y); // (v3.x - v1.x) / (v3.y - v1.y);
+    f32 CurrentX0 = C1.X;
+    for(i32 ScanlineY = C1.Y; ScanlineY <= C0.Y; ++ScanlineY)
+    {
+        ivec2 P0 = {(i32)CurrentX0, ScanlineY};
+        ivec2 P1 = {(i32)CurrentX0, ScanlineY};
+        DrawHorizontalLine(Image, Color, P0, P1);
+        CurrentX0 += InverseSlope0;
+    }
+
+    // NOTE(miha): Horizontal line between C1 and C2.
+    DrawHorizontalLine(Image, Color, C2, C1);
+
+    // NOTE(miha): Slope between C2 and C3.
+    f32 InverseSlope2 = ((f32)C3.X - C2.X) / ((f32)C3.Y - C2.Y); // (v3.x - v1.x) / (v3.y - v1.y);
+    f32 CurrentX2 = C2.X;
+    for(i32 ScanlineY = C2.Y; ScanlineY <= C3.Y; ++ScanlineY)
+    {
+        ivec2 P0 = {(i32)CurrentX2, ScanlineY};
+        ivec2 P1 = {(i32)CurrentX2, ScanlineY};
+        DrawHorizontalLine(Image, Color, P0, P1);
+        CurrentX2 += InverseSlope2;
+    }
+
+    // NOTE(miha): Slope between C3 and C4.
+    f32 InverseSlope3 = ((f32)C4.X - C3.X) / ((f32)C4.Y - C3.Y);
+    f32 CurrentX3 = C4.X;
+    for(i32 ScanlineY = C4.Y; ScanlineY > C3.Y; --ScanlineY)
+    {
+        ivec2 P0 = {(i32)CurrentX3, ScanlineY};
+        ivec2 P1 = {(i32)CurrentX3, ScanlineY};
+        DrawHorizontalLine(Image, Color, P0, P1);
+        CurrentX3 -= InverseSlope3;
+    }
+}
+
 ivec2 *
 FindCellCornerPixels(grid *Grid, uvec2 CellIndex)
 {
@@ -211,6 +251,10 @@ DrawCell(grid *Grid, image *Image, uvec2 CellIndex)
     SortTrianglePoints(&X,&Y,&Z);
     DrawTriangleTopFlat(Image, Color, X, Y, Z);
     //printf("draw top: p0: {%d, %d}, p1: {%d, %d}, p2: {%d, %d}\n", Y.X, Y.Y, Z.X, Z.Y, X.X, X.Y);
+
+#if defined(DRAW_CELL_BORDER)
+    DrawBorder(Image, color{0,0,0}, C0, C1, C2, C3, C4, C5);
+#endif
 }
 
 void
