@@ -8,3 +8,5 @@ run project:
 1) run program in the build directory (eg. ./snow_crystal_growth_model 1.0 0.5 0.001)
 2) or from code directory: ../build/snow_crystal_growth_model 1.0 0.5 0.001
 *) value 1.0 = alpha, 0.5 = beta, 0.001 = gamma
+3) use './run.sh basic alpha beta gamma' from the code directory.
+
