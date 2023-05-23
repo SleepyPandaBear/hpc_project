@@ -155,6 +155,20 @@ GridElement(grid *Grid, u32 Row, u32 Column)
     return Grid->Cells[Row*Grid->Size + Column];
 }
 
+void
+GridSetElement(grid *Grid, u32 Row, u32 Column, cell Cell)
+{
+    if(Column & 1)
+    {
+        // NOTE(miha): Even column.
+        Grid->Cells[(Row+1)*Grid->Size + Column] = Cell;
+    }
+    else
+    {
+        // NOTE(miha): Odd column.
+    }
+}
+
 ivec2
 GridNeighbour(u32 Row, u32 Column, u32 Direction)
 {

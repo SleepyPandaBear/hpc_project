@@ -12,6 +12,9 @@
 #define DRAW_CELL_BORDER
 #include "snow_crystal_growth_renderer.h"
 
+//#define SAVE_DURING_ITERATIONS
+#define SAVE_DURING_ITERATIONS_INTERVAL (20)
+
 // TODO(miha): Grid
 // TODO(miha): Save image
 // TODO(miha): Actual model
@@ -24,7 +27,10 @@ GenerateGrid(grid *Grid, f32 Beta)
 {
     // NOTE(miha): Grid has to be odd sized.
     if(Grid->Size % 2 == 0)
+    {
+        printf("Grid has to be odd sized, %d mod 2 != 1\n", Grid->Size);
         return 0;
+    }
 
     cell *Cells = (cell *)malloc(Grid->Size*Grid->Size*sizeof(cell));
     memset(Cells, 0, Grid->Size*Grid->Size*sizeof(cell));
@@ -38,7 +44,7 @@ GenerateGrid(grid *Grid, f32 Beta)
     // NOTE(miha): Set bottom row cells to EDGE
     for(u32 RowIndex = 0; RowIndex < Grid->Size; ++RowIndex)
     {
-        printf("bottom: row_idx: %d\n", RowIndex);
+        //printf("bottom: row_idx: %d\n", RowIndex);
         Cells[(Grid->Size-1)*Grid->Size + RowIndex].Type = EDGE;
     }
 
@@ -51,7 +57,7 @@ GenerateGrid(grid *Grid, f32 Beta)
     // NOTE(miha): Set right column cells to EDGE
     for(u32 ColumnIndex = 0; ColumnIndex < Grid->Size; ++ColumnIndex)
     {
-        printf("right: col_idx: %d\n", ColumnIndex);
+        //printf("right: col_idx: %d\n", ColumnIndex);
         Cells[(Grid->Size-1) + ColumnIndex*Grid->Size].Type = EDGE;
     }
 
@@ -65,19 +71,23 @@ GenerateGrid(grid *Grid, f32 Beta)
     Cells[(Grid->Size/2)*Grid->Size + (Grid->Size/2)].Type = FROZEN;
     Cells[(Grid->Size/2)*Grid->Size + (Grid->Size/2)].Value = 1.0f;
 
+    // TODO(miha): Think about this, is it better to set BOUANDY around seed at
+    // the start or should it be calculated?
+#if 0
     // NOTE(miha): Set neihbours of the middle cell to BOUNDARY
     for(u32 Direction = 0; Direction < 6; ++Direction)
     {
         ivec2 Neighbour = GridNeighbour(Grid->Size/2, Grid->Size/2, Direction);
         Cells[Neighbour.Row*Grid->Size + Neighbour.Column].Type = BOUNDARY;
     }
+#endif
 
     Grid->Cells = Cells;
 
     return 1;
 }
 
-#if 0
+#if 1
 void
 PrintGrid(grid *Grid)
 {
@@ -90,11 +100,13 @@ PrintGrid(grid *Grid)
                 if(Row == 0)
                 {
                     printf("%6.2f ", -1.0f);
+                    //printf("%6.2f ", GridElement(Grid, Row, Column).Value);
                 }
                 else
                 {
                     ivec2 Neighbour = GridNeighbour(Row, Column, N);
                     printf("%6.2f ", GridElement(Grid, Neighbour.X, Neighbour.Y).Value);
+                    //printf("%6.2f ", GridElement(Grid, Row, Column).Value);
                 }
             }
             else
@@ -151,10 +163,13 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     f32 Beta = atof(ArgumentValues[2]);
     f32 Gamma = atof(ArgumentValues[3]);
 
+    printf("alpha: %f, beta: %f, gamma: %f\n", Alpha, Beta, Gamma);
+
     grid Grid = {};
     // CARE(miha): CellSize is the radius of a cell!
     Grid.CellSize = 10;
-    Grid.Size = 21;
+    // CARE(miha): Border is included into Grid.Size!
+    Grid.Size = 331;
     // NOTE(miha): We have two grids; one for time t and one for time t+1.
     grid NewGrid = {};
     NewGrid.CellSize = Grid.CellSize;
@@ -171,50 +186,43 @@ main(i32 ArgumentCount, char *ArgumentValues[])
 
         b32 Running = 1;
         u32 Iteration = 0;
+        u32 FromIterations = 0;
 
-        // NOTE(miha): First iteration we do calculations in the 'NewGrid'.
-        grid *CurrentGrid = &NewGrid;
-        grid *PreviousGrid = &Grid;
+        // NOTE(miha): First iteration we do calculations in the 'NextGrid'.
+        grid *CurrentGrid = &Grid;
+        grid *NextGrid = &NewGrid;
 
-#if 0
-        for(u32 Direction = 0; Direction < 6; ++Direction)
-        {
-            ivec2 Neighbour = GridNeighbour(0, 10, Direction);
-            printf("neigbour: {%d, %d}\n", Neighbour.Row, Neighbour.Column);
-            cell NeighbourCell = GridElement(PreviousGrid, Neighbour.Row, Neighbour.Column);
-            printf("neigbourcell: {%d}\n", NeighbourCell.Type);
-        }
-
-        Running = 0;
-#endif
         while(Running)
         {
             printf("iteration: %d\n", Iteration);
             // NOTE(miha): Iterate all cells.
-            for(u32 Row = 0; Row < PreviousGrid->Size; ++Row)
+            u32 MaxColumn = 0;
+            for(u32 Row = 0; Row < CurrentGrid->Size; ++Row)
             {
-                for(u32 Column = 0; Column < PreviousGrid->Size; ++Column)
+                for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
                 {
-                    cell Cell = GridElement(PreviousGrid, Row, Column);
-                    f32 NewValue = 0.0f;
-                    // NOTE(miha): Skip EDGE cells.
+                    cell Cell = GridElement(CurrentGrid, Row, Column);
+                    // NOTE(miha): Give EDGE cells Beta amount of water.
                     if(Cell.Type == EDGE)
+                    {
+                        CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Value = Beta;
                         continue;
+                    }
 
+                    // NOTE(miha): New water value for the cell.
+                    f32 NewWaterValue = 0.0f;
                     if(IsReceptive(Cell))
                     {
                         // NOTE(miha): Cell is receptive, we don't have diffusion.
-                        NewValue += Cell.Value;
+                        NewWaterValue += Cell.Value;
 
                         f32 NeighbourDiffusion = 0.0f;
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > PreviousGrid->Size || Neighbour.Column < 0 || Neighbour.Column > PreviousGrid->Size)
+                            if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid->Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
                                 continue;
-                            cell NeighbourCell = GridElement(PreviousGrid, Neighbour.Row, Neighbour.Column);
-                            if(NeighbourCell.Type == EDGE)
-                                continue;
+                            cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
                             if(!IsReceptive(NeighbourCell))
                             {
                                 NeighbourDiffusion += NeighbourCell.Value;
@@ -222,45 +230,60 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         }
                         NeighbourDiffusion /= 6.0f;
 
-                        NewValue += (Alpha/2.0f)*NeighbourDiffusion;
-                        NewValue += Gamma;
+                        NewWaterValue += (Alpha/2.0f)*NeighbourDiffusion;
+                        NewWaterValue += Gamma;
                     }
                     else
                     {
                         // NOTE(miha): Cell is not receptive, we only have diffusion.
-                        NewValue += Cell.Value;
+                        NewWaterValue += Cell.Value;
 
                         f32 NeighbourDiffusion = 0.0f;
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > PreviousGrid->Size || Neighbour.Column < 0 || Neighbour.Column > PreviousGrid->Size)
+                            if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid->Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
                                 continue;
-                            cell NeighbourCell = GridElement(PreviousGrid, Neighbour.Row, Neighbour.Column);
-                            if(NeighbourCell.Type == EDGE)
-                                continue;
+                            cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
                             if(!IsReceptive(NeighbourCell))
                             {
                                 NeighbourDiffusion += NeighbourCell.Value;
                             }
                         }
                         NeighbourDiffusion /= 6.0f;
-                        NeighbourDiffusion -= Cell.Value;
+                        // NeighbourDiffusion -= Cell.Value;
 
-                        NewValue += (Alpha/2.0f)*NeighbourDiffusion;
+                        NewWaterValue += (Alpha/2.0f)*(NeighbourDiffusion - Cell.Value);
                     }
 
                     // NOTE(miha): Update new grid.
-                    CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Value = NewValue;
-                    if(NewValue > 1.0f)
+                    NextGrid->Cells[Row*NextGrid->Size + Column].Value = NewWaterValue;
+                    if(NewWaterValue > 1.0f)
                     {
-                        CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Type = FROZEN;
+                        NextGrid->Cells[Row*NextGrid->Size + Column].Type = FROZEN;
+                        for(u32 Direction = 0; Direction < 6; ++Direction)
+                        {
+                            ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
+                            if(Neighbour.Row < 0 || Neighbour.Row > NextGrid->Size || Neighbour.Column < 0 || Neighbour.Column > NextGrid->Size)
+                                continue;
+                            cell NeighbourCell = GridElement(NextGrid, Neighbour.Row, Neighbour.Column);
+                            if(NeighbourCell.Type == EDGE)
+                            {
+                                if(Column > MaxColumn)
+                                    MaxColumn = Column;
+                                continue;
+                            }
+                            if(!IsReceptive(NeighbourCell))
+                                NextGrid->Cells[Neighbour.Row*NextGrid->Size + Neighbour.Column].Type = BOUNDARY;
+                        }
                     }
 
                     // Grid->Cells[Row*Grid->Size + Column].Value = (f32)(Row*Grid->Size + Column);
                 }
             }
 
+
+#if 0
             // NOTE(miha): Update BOUNDARY cells.
             for(u32 Row = 0; Row < CurrentGrid->Size; ++Row)
             {
@@ -280,26 +303,54 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                                 continue;
                             cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
                             if(NeighbourCell.Type == EDGE)
+                            {
+                                if(Column > MaxColumn)
+                                    MaxColumn = Column;
                                 continue;
+                            }
                             if(!IsReceptive(NeighbourCell))
                                 CurrentGrid->Cells[Neighbour.Row*CurrentGrid->Size + Neighbour.Column].Type = BOUNDARY;
                         }
                     }
                 }
             }
+#endif
 
+            /*
+            NextGrid->Cells[0*NextGrid->Size + 0].Type = FROZEN;
+            NextGrid->Cells[1*NextGrid->Size + 1].Type = FROZEN;
+            NextGrid->Cells[2*NextGrid->Size + 2].Type = FROZEN;
+            NextGrid->Cells[3*NextGrid->Size + 3].Type = FROZEN;
+            NextGrid->Cells[4*NextGrid->Size + 4].Type = FROZEN;
+            */
             // NOTE(miha): Switch grids.
-            grid *Temp = CurrentGrid;
-            CurrentGrid = PreviousGrid;
-            PreviousGrid = Temp;
+            grid *Temp = NextGrid;
+            NextGrid = CurrentGrid;
+            CurrentGrid = Temp;
 
-            if(Iteration > 80)
+            if(!FromIterations && MaxColumn == CurrentGrid->Size-2)
+            {
+                FromIterations = Iteration;
                 Running = 0;
+            }
+            if(FromIterations && Iteration - FromIterations > 20)
+                Running = 0;
+
+#if defined(SAVE_DURING_ITERATIONS)
+            if(Iteration % SAVE_DURING_ITERATIONS_INTERVAL == 0)
+            {
+                char FileNameBuffer[256] = {};
+                snprintf(FileNameBuffer, 256, "out%d.png", Iteration / SAVE_DURING_ITERATIONS_INTERVAL);
+                //PrintGrid(CurrentGrid);
+                DrawGrid(CurrentGrid, &Image);
+                stbi_write_png(FileNameBuffer, Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
+            }
+#endif
             Iteration++;
         }
 
 
-        DrawGrid(&Grid, &Image);
+        DrawGrid(CurrentGrid, &Image);
         stbi_write_png("out.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
     }
     else
