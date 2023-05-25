@@ -4,6 +4,9 @@
 #include "string.h"
 #include "snow_crystal_growth_model.h"
 
+// NOTE(miha): Import OpenMP for timer.
+#include "omp.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
@@ -15,12 +18,7 @@
 //#define SAVE_DURING_ITERATIONS
 #define SAVE_DURING_ITERATIONS_INTERVAL (20)
 
-// TODO(miha): Grid
-// TODO(miha): Save image
-// TODO(miha): Actual model
-// TODO(miha): Possible header files: grid.h
-
-// NOTE(miha): For grid we will use offset coordinates.
+// NOTE(miha): For grid we will use offset coordinates (even-q).
 
 b32
 GenerateGrid(grid *Grid, f32 Beta)
@@ -87,7 +85,7 @@ GenerateGrid(grid *Grid, f32 Beta)
     return 1;
 }
 
-#if 1
+#if 0
 void
 PrintGrid(grid *Grid)
 {
@@ -163,8 +161,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     f32 Beta = atof(ArgumentValues[2]);
     f32 Gamma = atof(ArgumentValues[3]);
 
-    printf("alpha: %f, beta: %f, gamma: %f\n", Alpha, Beta, Gamma);
-
     grid Grid = {};
     // CARE(miha): CellSize is the radius of a cell!
     Grid.CellSize = 10;
@@ -192,6 +188,7 @@ main(i32 ArgumentCount, char *ArgumentValues[])
         grid *CurrentGrid = &Grid;
         grid *NextGrid = &NewGrid;
 
+        f64 TimeStart = omp_get_wtime();
         while(Running)
         {
             printf("iteration: %d\n", Iteration);
@@ -229,7 +226,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                             }
                         }
                         NeighbourDiffusion /= 6.0f;
-
                         NewWaterValue += (Alpha/2.0f)*NeighbourDiffusion;
                         NewWaterValue += Gamma;
                     }
@@ -251,8 +247,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                             }
                         }
                         NeighbourDiffusion /= 6.0f;
-                        // NeighbourDiffusion -= Cell.Value;
-
                         NewWaterValue += (Alpha/2.0f)*(NeighbourDiffusion - Cell.Value);
                     }
 
@@ -277,52 +271,9 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                                 NextGrid->Cells[Neighbour.Row*NextGrid->Size + Neighbour.Column].Type = BOUNDARY;
                         }
                     }
-
-                    // Grid->Cells[Row*Grid->Size + Column].Value = (f32)(Row*Grid->Size + Column);
                 }
             }
 
-
-#if 0
-            // NOTE(miha): Update BOUNDARY cells.
-            for(u32 Row = 0; Row < CurrentGrid->Size; ++Row)
-            {
-                for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
-                {
-                    cell Cell = GridElement(CurrentGrid, Row, Column);
-                    // NOTE(miha): Skip EDGE cells.
-                    if(Cell.Type == EDGE)
-                        continue;
-
-                    if(Cell.Type == FROZEN)
-                    {
-                        for(u32 Direction = 0; Direction < 6; ++Direction)
-                        {
-                            ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid->Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
-                                continue;
-                            cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
-                            if(NeighbourCell.Type == EDGE)
-                            {
-                                if(Column > MaxColumn)
-                                    MaxColumn = Column;
-                                continue;
-                            }
-                            if(!IsReceptive(NeighbourCell))
-                                CurrentGrid->Cells[Neighbour.Row*CurrentGrid->Size + Neighbour.Column].Type = BOUNDARY;
-                        }
-                    }
-                }
-            }
-#endif
-
-            /*
-            NextGrid->Cells[0*NextGrid->Size + 0].Type = FROZEN;
-            NextGrid->Cells[1*NextGrid->Size + 1].Type = FROZEN;
-            NextGrid->Cells[2*NextGrid->Size + 2].Type = FROZEN;
-            NextGrid->Cells[3*NextGrid->Size + 3].Type = FROZEN;
-            NextGrid->Cells[4*NextGrid->Size + 4].Type = FROZEN;
-            */
             // NOTE(miha): Switch grids.
             grid *Temp = NextGrid;
             NextGrid = CurrentGrid;
@@ -333,8 +284,8 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                 FromIterations = Iteration;
                 Running = 0;
             }
-            if(FromIterations && Iteration - FromIterations > 20)
-                Running = 0;
+            //if(FromIterations && Iteration - FromIterations > 20)
+            //    Running = 0;
 
 #if defined(SAVE_DURING_ITERATIONS)
             if(Iteration % SAVE_DURING_ITERATIONS_INTERVAL == 0)
@@ -349,9 +300,10 @@ main(i32 ArgumentCount, char *ArgumentValues[])
             Iteration++;
         }
 
-
+        f64 TimeEnd = omp_get_wtime();
+        printf("time elapsed: %lf\n", TimeEnd - TimeStart);
         DrawGrid(CurrentGrid, &Image);
-        stbi_write_png("out.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
+        stbi_write_png("out_basic.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
     }
     else
     {

@@ -24,24 +24,23 @@ fi
 if [[ "$arg" == "basic" ]]; then
     jumpto basic
 fi
+if [[ "$arg" == "cuda" ]]; then
+    jumpto cuda
+fi
 if [[ "$arg" == "help" ]]; then
     jumpto help
 fi
 jumpto end
 
 basic:
-    #if [[ "$#" -ne 5 ]]; then
-    #    jumpto help
-    #fi
-    echo "$0"
-    echo "$1"
-    echo "$alpha"
-    echo "$beta"
-    echo "$gamma"
     srun --reservation=fri --cpus-per-task=1 --ntasks=1 --time=00:20:00 ../build/snow_crystal_growth_model $alpha $beta $gamma
     #pushd ../build/
     #./snow_crystal_growth_model $2 $3 $4
     #popd
+jumpto end
+
+cuda:
+    srun --reservation=fri -G1 -n1 --time=00:20:00 ../build/snow_crystal_growth_model_cuda $alpha $beta $gamma
 jumpto end
 
 help:
