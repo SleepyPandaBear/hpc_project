@@ -24,6 +24,12 @@ fi
 if [[ "$arg" == "cuda" ]]; then
     jumpto cuda
 fi
+if [[ "$arg" == "openmpi" ]]; then
+    jumpto openmpi
+fi
+if [[ "$arg" == "openmp" ]]; then
+    jumpto openmp
+fi
 if [[ "$arg" == "help" ]]; then
     jumpto help
 fi
@@ -35,6 +41,8 @@ help:
 	echo "    Build basic version of the model."
 	echo "  - cuda"
 	echo "    Build cuda version of the model."
+	echo "  - openmpi"
+	echo "    Build openmpi version of the model."
 jumpto end
 
 basic:
@@ -44,6 +52,15 @@ jumpto end
 cuda:
     module load CUDA/10.1.243-GCC-8.3.0
 	nvcc snow_crystal_growth_model_cuda.cu --compiler-options -Wall -noeh -O2 -o ../build/snow_crystal_growth_model_cuda
+jumpto end
+
+openmpi:
+    #module load mpi/openmpi-4.1.3
+    module load OpenMPI/4.1.0-GCC-10.2.0
+    srun --mpi=pmix --reservation=fri --time=00:05:00 mpicc snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi
+jumpto end
+
+openmp:
 jumpto end
 
 end:

@@ -43,6 +43,10 @@ cuda:
     srun --reservation=fri -G1 -n1 --time=00:20:00 ../build/snow_crystal_growth_model_cuda $alpha $beta $gamma
 jumpto end
 
+openmpi:
+    srun --mpi=pmix -n4 -N1 --reservation=fri --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma
+jumpto end
+
 help:
 	echo "You can run next commands:"
 	echo "  - basic"
