@@ -27,6 +27,9 @@ fi
 if [[ "$arg" == "openmpi" ]]; then
     jumpto openmpi
 fi
+if [[ "$arg" == "openmpi_arnes" ]]; then
+    jumpto openmpi_arnes
+fi
 if [[ "$arg" == "openmp" ]]; then
     jumpto openmp
 fi
@@ -58,6 +61,10 @@ openmpi:
     #module load mpi/openmpi-4.1.3
     module load OpenMPI/4.1.0-GCC-10.2.0
     srun --mpi=pmix --reservation=fri --time=00:05:00 mpicc snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi
+jumpto end
+
+openmpi_arnes:
+    srun --mpi=pmix --reservation=fri-vr --partition=gpu --time=00:05:00 mpicc snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi
 jumpto end
 
 openmp:

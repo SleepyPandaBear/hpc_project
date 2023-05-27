@@ -27,6 +27,12 @@ fi
 if [[ "$arg" == "cuda" ]]; then
     jumpto cuda
 fi
+if [[ "$arg" == "openmpi" ]]; then
+    jumpto openmpi
+fi
+if [[ "$arg" == "openmpi_arnes" ]]; then
+    jumpto openmpi_arnes
+fi
 if [[ "$arg" == "help" ]]; then
     jumpto help
 fi
@@ -45,6 +51,10 @@ jumpto end
 
 openmpi:
     srun --mpi=pmix -n4 -N1 --reservation=fri --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma
+jumpto end
+
+openmpi_arnes:
+    srun --mpi=pmix -n4 -N1 --reservation=fri-vr --partition=gpu --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma
 jumpto end
 
 help:
