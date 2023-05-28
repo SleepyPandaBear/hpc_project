@@ -6,16 +6,14 @@
 
 // NOTE(miha): Import OpenMP for timer.
 #include "omp.h"
-
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
 #include "stb_image_write.h"
-
 #define DRAW_CELL_BORDER
 #include "snow_crystal_growth_renderer.h"
 
-//#define SAVE_DURING_ITERATIONS
+// #define SAVE_DURING_ITERATIONS
 #define SAVE_DURING_ITERATIONS_INTERVAL (20)
 
 // NOTE(miha): For grid we will use offset coordinates (even-q).
@@ -153,7 +151,6 @@ IsReceptive(cell Cell)
 }
 
 // ivec2 GridNeighbour(row, col, dir)
-
 i32
 main(i32 ArgumentCount, char *ArgumentValues[])
 {
@@ -188,24 +185,24 @@ main(i32 ArgumentCount, char *ArgumentValues[])
         grid *CurrentGrid = &Grid;
         grid *NextGrid = &NewGrid;
 
-        f64 TimeStart = omp_get_wtime();
-        while(Running)
+    f64 TimeStart = omp_get_wtime();
+    while(Running)
+    {
+    u32 MaxColumn = 0;
+    // printf("iteration: %d\n", Iteration);
+    #pragma omp parallel for reduction(max : MaxColumn)
+    // NOTE(miha): Iterate all cells.
+    for(u32 Row = 0; Row < CurrentGrid->Size; ++Row)
+    {
+        for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
         {
-            printf("iteration: %d\n", Iteration);
-            // NOTE(miha): Iterate all cells.
-            u32 MaxColumn = 0;
-            for(u32 Row = 0; Row < CurrentGrid->Size; ++Row)
-            {
-                for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
-                {
-                    cell Cell = GridElement(CurrentGrid, Row, Column);
+            cell Cell = GridElement(CurrentGrid, Row, Column);
                     // NOTE(miha): Give EDGE cells Beta amount of water.
                     if(Cell.Type == EDGE)
                     {
                         CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Value = Beta;
                         continue;
                     }
-
                     // NOTE(miha): New water value for the cell.
                     f32 NewWaterValue = 0.0f;
                     if(IsReceptive(Cell))
@@ -223,8 +220,8 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                             if(!IsReceptive(NeighbourCell))
                             {
                                 NeighbourDiffusion += NeighbourCell.Value;
-                            }
-                        }
+        }
+    }
                         NeighbourDiffusion /= 6.0f;
                         NewWaterValue += (Alpha/2.0f)*NeighbourDiffusion;
                         NewWaterValue += Gamma;
@@ -233,7 +230,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                     {
                         // NOTE(miha): Cell is not receptive, we only have diffusion.
                         NewWaterValue += Cell.Value;
-
                         f32 NeighbourDiffusion = 0.0f;
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
@@ -249,7 +245,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         NeighbourDiffusion /= 6.0f;
                         NewWaterValue += (Alpha/2.0f)*(NeighbourDiffusion - Cell.Value);
                     }
-
                     // NOTE(miha): Update new grid.
                     NextGrid->Cells[Row*NextGrid->Size + Column].Value = NewWaterValue;
                     if(NewWaterValue > 1.0f)
@@ -273,19 +268,15 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                     }
                 }
             }
-
             // NOTE(miha): Switch grids.
             grid *Temp = NextGrid;
             NextGrid = CurrentGrid;
             CurrentGrid = Temp;
-
             if(!FromIterations && MaxColumn == CurrentGrid->Size-2)
             {
                 FromIterations = Iteration;
                 Running = 0;
             }
-            //if(FromIterations && Iteration - FromIterations > 20)
-            //    Running = 0;
 
 #if defined(SAVE_DURING_ITERATIONS)
             if(Iteration % SAVE_DURING_ITERATIONS_INTERVAL == 0)
@@ -299,11 +290,10 @@ main(i32 ArgumentCount, char *ArgumentValues[])
 #endif
             Iteration++;
         }
-
-        f64 TimeEnd = omp_get_wtime();
+    f64 TimeEnd = omp_get_wtime();
         printf("time elapsed: %lf\n", TimeEnd - TimeStart);
         DrawGrid(CurrentGrid, &Image);
-        stbi_write_png("out_basic.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
+        stbi_write_png("out_OpenMP.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
     }
     else
     {
