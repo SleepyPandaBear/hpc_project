@@ -9,3 +9,4 @@ time elapsed: 1.983274
 time elapsed: 1.029293
 time elapsed: 4.988879
 time elapsed: 12.115104
+time elapsed: 0.889652

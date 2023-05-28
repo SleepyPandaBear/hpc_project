@@ -53,7 +53,7 @@ jumpto end
 
 openmp:
     gcc -O2 -Wall snow_crystal_growth_model_openmp.cpp -lm -fopenmp -o ../build/snow_crystal_growth_model_openmp -lstdc++
-    srun --reservation=fri --cpus-per-task=2 --ntasks=1 --time=00:20:00 ../build/snow_crystal_growth_model_openmp $alpha $beta $gamma >> results_snowflake_OpenMP.txt
+    srun --reservation=fri --cpus-per-task=64 --ntasks=1 --time=00:20:00 ../build/snow_crystal_growth_model_openmp $alpha $beta $gamma >> results_snowflake_OpenMP.txt
 jumpto end
 
 cuda:
