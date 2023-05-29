@@ -50,24 +50,30 @@ jumpto end
 
 basic:
     gcc -Wall snow_crystal_growth_model.cpp -lm -fopenmp -o ../build/snow_crystal_growth_model -lstdc++
+    gcc -Wall snow_crystal_growth_model.cpp -DSAVE_DURING_ITERATIONS -lm -fopenmp -o ../build/snow_crystal_growth_model_iterations -lstdc++
 jumpto end
 
 cuda:
     module load CUDA/10.1.243-GCC-8.3.0
 	nvcc snow_crystal_growth_model_cuda.cu --compiler-options -Wall -noeh -O2 -o ../build/snow_crystal_growth_model_cuda
+	nvcc snow_crystal_growth_model_cuda.cu --compiler-options -DSAVE_DURING_ITERATIONS -Wall -noeh -O2 -o ../build/snow_crystal_growth_model_cuda_iterations
 jumpto end
 
 openmpi:
     #module load mpi/openmpi-4.1.3
     module load OpenMPI/4.1.0-GCC-10.2.0
     srun --mpi=pmix --reservation=fri --time=00:05:00 mpicc snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi
+    srun --mpi=pmix --reservation=fri --time=00:05:00 mpicc -DSAVE_DURING_ITERATIONS snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi_iterations
 jumpto end
 
 openmpi_arnes:
     srun --mpi=pmix --reservation=fri-vr --partition=gpu --time=00:05:00 mpicc snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi
+    srun --mpi=pmix --reservation=fri-vr --partition=gpu --time=00:05:00 mpicc -DSAVE_DURING_ITERATIONS snow_crystal_growth_model_openmpi.cpp -lm -o ../build/snow_crystal_growth_model_openmpi_iterations
 jumpto end
 
 openmp:
+    gcc -Wall snow_crystal_growth_model_openmp.cpp -lm -fopenmp -o ../build/snow_crystal_growth_model_openmp -lstdc++
+    gcc -Wall -DSAVE_DURING_ITERATIONS snow_crystal_growth_model_openmp.cpp -lm -fopenmp -o ../build/snow_crystal_growth_model_openmp_iterations -lstdc++
 jumpto end
 
 end:

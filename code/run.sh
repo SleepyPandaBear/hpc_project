@@ -12,6 +12,8 @@ arg=$1
 alpha=$2
 beta=$3
 gamma=$4
+size=$5
+max_iteration=$6
 
 start=${1:-"start"}
 
@@ -33,28 +35,42 @@ fi
 if [[ "$arg" == "openmpi_arnes" ]]; then
     jumpto openmpi_arnes
 fi
+if [[ "$arg" == "openmp" ]]; then
+    jumpto openmpi
+fi
 if [[ "$arg" == "help" ]]; then
     jumpto help
 fi
 jumpto end
 
 basic:
-    srun --reservation=fri --cpus-per-task=1 --ntasks=1 --time=00:20:00 ../build/snow_crystal_growth_model $alpha $beta $gamma
-    #pushd ../build/
+    pushd ../build/
+    #srun --reservation=fri --cpus-per-task=1 --ntasks=1 --time=00:20:00 ../build/snow_crystal_growth_model $alpha $beta $gamma $size $max_iteration
+    srun --reservation=fri --cpus-per-task=1 --ntasks=1 --time=00:20:00 snow_crystal_growth_model $alpha $beta $gamma $size $max_iteration
     #./snow_crystal_growth_model $2 $3 $4
-    #popd
+    popd
 jumpto end
 
 cuda:
-    srun --reservation=fri -G1 -n1 --time=00:20:00 ../build/snow_crystal_growth_model_cuda $alpha $beta $gamma
+    pushd ../build/
+    srun --reservation=fri -G1 -n1 --time=00:20:00 ../build/snow_crystal_growth_model_cuda $alpha $beta $gamma $size $max_iteration
+    popd
 jumpto end
 
 openmpi:
-    srun --mpi=pmix -n4 -N1 --reservation=fri --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma
+    pushd ../build/
+    srun --mpi=pmix -n4 -N1 --reservation=fri --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma $size $max_iteration
+    popd
 jumpto end
 
 openmpi_arnes:
-    srun --mpi=pmix -n4 -N1 --reservation=fri-vr --partition=gpu --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma
+    srun --mpi=pmix -n4 -N1 --reservation=fri-vr --partition=gpu --time=00:20:00 ../build/snow_crystal_growth_model_openmpi $alpha $beta $gamma $size $max_iteration
+jumpto end
+
+openmp:
+    pushd ../build/
+    srun --cpus-per-task=32 --ntasks=1 --reservation=fri --time=00:20:00 ../build/snow_crystal_growth_model_openmp $alpha $beta $gamma $size $max_iteration
+    popd
 jumpto end
 
 help:

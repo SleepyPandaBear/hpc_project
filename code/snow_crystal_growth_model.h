@@ -121,9 +121,9 @@ union color
     u8 E[3];
 };
 
-static color Green = {0, 255, 0};
-static color Blue = {0, 0, 255};
-static color Orange = {255, 0, 0};
+static color Green = {145, 158, 192};
+static color Blue = {164, 179, 200};
+static color Orange = {204, 216, 224};
 static color White = {255, 255, 255};
 
 struct image

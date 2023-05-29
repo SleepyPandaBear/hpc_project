@@ -14,11 +14,11 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
-#define DRAW_CELL_BORDER
+//#define DRAW_CELL_BORDER
 #include "snow_crystal_growth_renderer.h"
 
 //#define SAVE_DURING_ITERATIONS
-#define SAVE_DURING_ITERATIONS_INTERVAL (20)
+#define SAVE_DURING_ITERATIONS_INTERVAL (50)
 
 b32
 GenerateGrid(grid *Grid, f32 Beta)
@@ -114,6 +114,112 @@ gpuGridNeighbour(u32 Row, u32 Column, u32 Direction)
     u32 Parity = Column & 1;
     i32 *Difference = DirectionDifference[Parity][Direction];
     return ivec2{(i32)Row+Difference[1], (i32)Column+Difference[0]};
+}
+
+__global__ void
+IterationGPUShared(grid CurrentGrid, grid NextGrid, u32 *MaxColumn, f32 *Alpha, f32 *Beta, f32 *Gamma)
+{
+    u32 LocalID = threadIdx.x;
+    u32 GlobalID = blockIdx.x * blockDim.x + threadIdx.x;
+    u32 Row = GlobalID / CurrentGrid.Size;
+    u32 Column = GlobalID % CurrentGrid.Size;
+
+    // NOTE(miha): BlockSize = 256
+    // If Cell.Type != EDGE we can init values?
+    __shared__ cell LocalCells[256 * 3 + 4];
+
+    LocalCells[LocalID] = CurrentGrid.Cells[GlobalID];
+    LocalCells[LocalID] = CurrentGrid.Cells[GlobalID];
+
+    if(GlobalID < CurrentGrid.Size*CurrentGrid.Size)
+    {
+        cell Cell = CurrentGrid.Cells[GlobalID];
+
+        if(Cell.Type == EDGE)
+        {
+            CurrentGrid.Cells[GlobalID].Value = *Beta;
+        }
+        else
+        {
+            f32 NewWaterValue = 0.0f;
+            if(gpuIsReceptive(Cell))
+            {
+                NewWaterValue += Cell.Value;
+
+                f32 NeighbourDiffusion = 0.0f;
+                for(u32 Direction = 0; Direction < 6; ++Direction)
+                {
+                    ivec2 Neighbour = gpuGridNeighbour(Row, Column, Direction);
+                    if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid.Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid.Size)
+                    {
+                        // NOTE(miha): Out of bounds, ignore it.
+                    }
+                    else
+                    {
+                        cell NeighbourCell = CurrentGrid.Cells[Neighbour.Row * CurrentGrid.Size + Neighbour.Column];
+                        if(!gpuIsReceptive(NeighbourCell))
+                        {
+                            NeighbourDiffusion += NeighbourCell.Value;
+                        }
+                    }
+                }
+                NeighbourDiffusion /= 6.0f;
+                NewWaterValue += (*Alpha/2.0f)*NeighbourDiffusion;
+                NewWaterValue += *Gamma;
+            }
+            else
+            {
+                NewWaterValue += Cell.Value;
+                f32 NeighbourDiffusion = 0.0f;
+                for(u32 Direction = 0; Direction < 6; ++Direction)
+                {
+                    ivec2 Neighbour = gpuGridNeighbour(Row, Column, Direction);
+                    if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid.Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid.Size)
+                    {
+                        // NOTE(miha): Out of bounds, ignore it.
+                    }
+                    else
+                    {
+                        cell NeighbourCell = CurrentGrid.Cells[Neighbour.Row * CurrentGrid.Size + Neighbour.Column];
+                        if(!gpuIsReceptive(NeighbourCell))
+                        {
+                            NeighbourDiffusion += NeighbourCell.Value;
+                        }
+                    }
+                }
+                NeighbourDiffusion /= 6.0f;
+                NewWaterValue += (*Alpha/2.0f)*(NeighbourDiffusion - Cell.Value);
+            }
+
+            NextGrid.Cells[GlobalID].Value = NewWaterValue;
+            if(NewWaterValue > 1.0f)
+            {
+                NextGrid.Cells[GlobalID].Type = FROZEN;
+                for(u32 Direction = 0; Direction < 6; ++Direction)
+                {
+                    ivec2 Neighbour = gpuGridNeighbour(Row, Column, Direction);
+                    if(Neighbour.Row < 0 || Neighbour.Row > CurrentGrid.Size || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid.Size)
+                    {
+                        // NOTE(miha): Out of bounds, ignore it.
+                    }
+                    else
+                    {
+                        cell NeighbourCell = NextGrid.Cells[Neighbour.Row * NextGrid.Size + Neighbour.Column];
+                        if(NeighbourCell.Type == EDGE)
+                        {
+                            if(Column > *MaxColumn)
+                                *MaxColumn = Column;
+                        }
+                        if(!gpuIsReceptive(NeighbourCell))
+                        {
+                            NextGrid.Cells[Neighbour.Row * NextGrid.Size + Neighbour.Column].Type = BOUNDARY;
+                        }
+                    }
+                }
+
+            }
+        }
+    }
 }
 
 __global__ void
@@ -223,12 +329,14 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     f32 Alpha = atof(ArgumentValues[1]);
     f32 Beta = atof(ArgumentValues[2]);
     f32 Gamma = atof(ArgumentValues[3]);
+    u32 Size = atoi(ArgumentValues[4]);
+    i32 MaxIteration = atoi(ArgumentValues[5]);
 
     grid Grid = {};
     // CARE(miha): CellSize is the radius of a cell!
     Grid.CellSize = 10;
     // CARE(miha): Border is included into Grid.Size!
-    Grid.Size = 331;
+    Grid.Size = Size;
     // NOTE(miha): We have two grids; one for time t and one for time t+1.
     grid NewGrid = {};
     NewGrid.CellSize = Grid.CellSize;
@@ -280,6 +388,11 @@ main(i32 ArgumentCount, char *ArgumentValues[])
         checkCudaErrors(cudaMalloc(&gpuGamma, sizeof(f32)));
         checkCudaErrors(cudaMemcpy(gpuGamma, &Gamma, sizeof(f32), cudaMemcpyHostToDevice));
 
+        cudaEvent_t Start, Stop;
+        cudaEventCreate(&Start);
+        cudaEventCreate(&Stop);
+        cudaEventRecord(Start);
+
         while(Running)
         {
             printf("iteration: %d\n", Iteration);
@@ -297,10 +410,15 @@ main(i32 ArgumentCount, char *ArgumentValues[])
             NextGrid = CurrentGrid;
             CurrentGrid = Temp;
 
-            if(!FromIterations && MaxColumn == CurrentGrid->Size-2)
+            if(MaxIteration == -1)
             {
-                FromIterations = Iteration;
-                Running = 0;
+                if(MaxColumn == CurrentGrid->Size-2)
+                    Running = 0;
+            }
+            else
+            {
+                if(Iteration > (u32)MaxIteration)
+                    Running = 0;
             }
             //if(FromIterations && Iteration - FromIterations > 20)
             //    Running = 0;
@@ -320,6 +438,13 @@ main(i32 ArgumentCount, char *ArgumentValues[])
 #endif
             Iteration++;
         }
+
+        cudaEventRecord(Stop);
+        cudaEventSynchronize(Stop);
+
+        f32 Milliseconds = 0;
+        cudaEventElapsedTime(&Milliseconds, Start, Stop);
+        printf("Time: %0.3f milliseconds \n", Milliseconds);
 
         cell *Cells = (cell *)malloc(Grid.Size*Grid.Size*sizeof(cell));
         memset(Cells, 0, Grid.Size*Grid.Size*sizeof(cell));

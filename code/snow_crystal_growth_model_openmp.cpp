@@ -6,16 +6,14 @@
 
 // NOTE(miha): Import OpenMP for timer.
 #include "omp.h"
-
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
 #include "stb_image_write.h"
-
 //#define DRAW_CELL_BORDER
 #include "snow_crystal_growth_renderer.h"
 
-//#define SAVE_DURING_ITERATIONS
+// #define SAVE_DURING_ITERATIONS
 #define SAVE_DURING_ITERATIONS_INTERVAL (50)
 
 // NOTE(miha): For grid we will use offset coordinates (even-q).
@@ -153,7 +151,6 @@ IsReceptive(cell Cell)
 }
 
 // ivec2 GridNeighbour(row, col, dir)
-
 i32
 main(i32 ArgumentCount, char *ArgumentValues[])
 {
@@ -162,14 +159,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     f32 Gamma = atof(ArgumentValues[3]);
     u32 Size = atoi(ArgumentValues[4]);
     i32 MaxIteration = atoi(ArgumentValues[5]);
-
-    // NOTE(miha): Folder name format: alpha&beta&gamma
-    char FileName[256] = {};
-    strcpy(FileName, ArgumentValues[1]);
-    FileName[strlen(ArgumentValues[1])] = '&';
-    strcpy(&FileName[strlen(ArgumentValues[1])+1], ArgumentValues[2]);
-    FileName[strlen(ArgumentValues[1])+strlen(ArgumentValues[2])+1] = '&';
-    strcpy(&FileName[strlen(ArgumentValues[1])+strlen(ArgumentValues[2])+2], ArgumentValues[3]);
 
     grid Grid = {};
     // CARE(miha): CellSize is the radius of a cell!
@@ -201,9 +190,10 @@ main(i32 ArgumentCount, char *ArgumentValues[])
         f64 TimeStart = omp_get_wtime();
         while(Running)
         {
-            printf("iteration: %d\n", Iteration);
-            // NOTE(miha): Iterate all cells.
             u32 MaxColumn = 0;
+            // printf("iteration: %d\n", Iteration);
+            #pragma omp parallel for reduction(max : MaxColumn)
+            // NOTE(miha): Iterate all cells.
             for(u32 Row = 0; Row < CurrentGrid->Size; ++Row)
             {
                 for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
@@ -215,7 +205,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Value = Beta;
                         continue;
                     }
-
                     // NOTE(miha): New water value for the cell.
                     f32 NewWaterValue = 0.0f;
                     if(IsReceptive(Cell))
@@ -243,7 +232,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                     {
                         // NOTE(miha): Cell is not receptive, we only have diffusion.
                         NewWaterValue += Cell.Value;
-
                         f32 NeighbourDiffusion = 0.0f;
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
@@ -259,7 +247,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         NeighbourDiffusion /= 6.0f;
                         NewWaterValue += (Alpha/2.0f)*(NeighbourDiffusion - Cell.Value);
                     }
-
                     // NOTE(miha): Update new grid.
                     NextGrid->Cells[Row*NextGrid->Size + Column].Value = NewWaterValue;
                     if(NewWaterValue > 1.0f)
@@ -283,12 +270,10 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                     }
                 }
             }
-
             // NOTE(miha): Switch grids.
             grid *Temp = NextGrid;
             NextGrid = CurrentGrid;
             CurrentGrid = Temp;
-
             if(MaxIteration == -1)
             {
                 if(MaxColumn == CurrentGrid->Size-2)
@@ -303,8 +288,8 @@ main(i32 ArgumentCount, char *ArgumentValues[])
 #if defined(SAVE_DURING_ITERATIONS)
             if(Iteration % SAVE_DURING_ITERATIONS_INTERVAL == 0)
             {
-                char FileNameBuffer[300] = {};
-                snprintf(FileNameBuffer, 300, "%s%d_basic.png", FileName, Iteration / SAVE_DURING_ITERATIONS_INTERVAL);
+                char FileNameBuffer[256] = {};
+                snprintf(FileNameBuffer, 256, "out%d.png", Iteration / SAVE_DURING_ITERATIONS_INTERVAL);
                 //PrintGrid(CurrentGrid);
                 DrawGrid(CurrentGrid, &Image);
                 stbi_write_png(FileNameBuffer, Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
@@ -312,13 +297,10 @@ main(i32 ArgumentCount, char *ArgumentValues[])
 #endif
             Iteration++;
         }
-
         f64 TimeEnd = omp_get_wtime();
         printf("time elapsed: %lf\n", TimeEnd - TimeStart);
         DrawGrid(CurrentGrid, &Image);
-        char FileNameBuffer[300] = {};
-        snprintf(FileNameBuffer, 300, "%s_basic.png", FileName);
-        stbi_write_png(FileNameBuffer, Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
+        stbi_write_png("out_OpenMP.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
     }
     else
     {
