@@ -12,11 +12,11 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
-#define DRAW_CELL_BORDER
+//#define DRAW_CELL_BORDER
 #include "snow_crystal_growth_renderer.h"
 
 //#define SAVE_DURING_ITERATIONS
-#define SAVE_DURING_ITERATIONS_INTERVAL (20)
+#define SAVE_DURING_ITERATIONS_INTERVAL (50)
 
 b32
 GenerateGrid(grid *Grid, f32 Beta)
@@ -159,9 +159,9 @@ main(i32 ArgumentCount, char *ArgumentValues[])
 
     i32 Rank;
     i32 NumberOfProcesses;
-    u32 Sender;
-    u32 Receiver;
-    u32 Tag = 0;
+
+    // NOTE(miha): Used for time measurnment.
+    f64 Start, End;
 
     MPI_Init(&ArgumentCount, &ArgumentValues);
     MPI_Comm_rank(MPI_COMM_WORLD, &Rank);
@@ -176,30 +176,28 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     MPI_Type_commit(&mpi_cell);
 
     grid Grid = {};
-    Grid.Size = 21;
+    Grid.Size = 331;
     Grid.CellSize = 10;
 
     // NOTE(miha): Initialize grid on process 0.
     if(Rank == 0)
     {
         GenerateGrid(&Grid, Beta);
-        FillGridWithTestElements(&Grid);
-        //PrintGrid(&Grid);
     }
 
     // NOTE(miha): Calculate how much work does each process do.
-    u32 NumberOfRows = Grid.Size/NumberOfProcesses;
-    u32 NumberOfRowsRoot = NumberOfRows + Grid.Size%NumberOfProcesses;
+    i32 NumberOfRows = Grid.Size/NumberOfProcesses;
+    i32 NumberOfRowsRoot = NumberOfRows + Grid.Size%NumberOfProcesses;
     // NOTE(miha): For MPI_Scatterv
     i32 SendCount[NumberOfProcesses] = {};
     i32 Displacement[NumberOfProcesses] = {};
-    for(u32 I = 0; I < NumberOfProcesses; ++I)
+    for(u32 I = 0; I < (u32)NumberOfProcesses; ++I)
     {
         SendCount[I] = NumberOfRows * Grid.Size;
     }
     SendCount[0] = NumberOfRowsRoot * Grid.Size;
     Displacement[0] = 0;
-    for(u32 I = 1; I < NumberOfProcesses; ++I)
+    for(u32 I = 1; I < (u32)NumberOfProcesses; ++I)
     {
         if(I == 1)
         {
@@ -221,15 +219,20 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     LocalGridNext.CellSize = Grid.CellSize;
 
     // NOTE(miha): Init local grid and next local grid - part of the grid for computtation.
+    // TODO(miha): Should we use mpi_cell type?
     if(Rank == 0)
     {
         LocalGrid.Cells = (cell *)malloc(NumberOfRowsRoot*LocalGrid.Size*sizeof(cell));
+        memset(LocalGrid.Cells, 0, NumberOfRowsRoot*LocalGrid.Size*sizeof(cell));
         LocalGridNext.Cells = (cell *)malloc(NumberOfRowsRoot*LocalGridNext.Size*sizeof(cell));
+        memset(LocalGridNext.Cells, 0, NumberOfRowsRoot*LocalGridNext.Size*sizeof(cell));
     }
     else
     {
         LocalGrid.Cells = (cell *)malloc(NumberOfRows*LocalGrid.Size*sizeof(cell));
+        memset(LocalGrid.Cells, 0, NumberOfRows*LocalGrid.Size*sizeof(cell));
         LocalGridNext.Cells = (cell *)malloc(NumberOfRows*LocalGridNext.Size*sizeof(cell));
+        memset(LocalGridNext.Cells, 0, NumberOfRows*LocalGridNext.Size*sizeof(cell));
     }
 
     // NOTE(miha): Allocate memory for neighbouring rows, get this rows every iteration.
@@ -244,37 +247,119 @@ main(i32 ArgumentCount, char *ArgumentValues[])
     grid *CurrentGrid = &LocalGrid;
     grid *NextGrid = &LocalGridNext;
 
+    if(Rank == 0)
+        Start = MPI_Wtime();
+
     while(Running)
     {
         // NOTE(miha): Receive top row from neighbour.
         if(Rank == 0)
         {
-            MPI_Sendrecv(&CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size-1], LocalGrid.Size, mpi_cell, (Rank + 1) % NumberOfProcesses, 0,
+            MPI_Sendrecv(&CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size], LocalGrid.Size, mpi_cell, (Rank + 1) % NumberOfProcesses, 0,
                         NeighbourRowTop, LocalGrid.Size, mpi_cell, (Rank + NumberOfProcesses - 1) % NumberOfProcesses,
                         0, MPI_COMM_WORLD, MPI_STATUSES_IGNORE);
         }
         else
         {
-            MPI_Sendrecv(&CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size-1], LocalGrid.Size, mpi_cell, (Rank + 1) % NumberOfProcesses, 0,
+            MPI_Sendrecv(&CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size], LocalGrid.Size, mpi_cell, (Rank + 1) % NumberOfProcesses, 0,
                         NeighbourRowTop, LocalGrid.Size, mpi_cell, (Rank + NumberOfProcesses - 1) % NumberOfProcesses,
                         0, MPI_COMM_WORLD, MPI_STATUSES_IGNORE);
         }
 
         // NOTE(miha): Receive bottom row from neighbour.
-        MPI_Sendrecv(CurrentGrid->Cells, LocalGrid.Size, mpi_cell, (Rank + NumberOfProcesses - 1) % NumberOfProcesses, 0,
+        MPI_Sendrecv(&CurrentGrid->Cells[0], LocalGrid.Size, mpi_cell, (Rank + NumberOfProcesses - 1) % NumberOfProcesses, 1,
                      NeighbourRowBottom, LocalGrid.Size, mpi_cell, (Rank + 1) % NumberOfProcesses,
-                     0, MPI_COMM_WORLD, MPI_STATUSES_IGNORE);
+                     1, MPI_COMM_WORLD, MPI_STATUSES_IGNORE);
+
+#if 1
+        // NOTE(miha): See if neighbouring rows contain any FROZEN cells.
+        if(Rank == 0)
+        {
+            for(u32 I = 1; I < CurrentGrid->Size-1; ++I)
+            {
+                if(NeighbourRowBottom[I].Type == FROZEN)
+                {
+                    if(I % 2 == 0)
+                    {
+                        CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size + I].Type = BOUNDARY;
+                        CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size + I-1].Type = BOUNDARY;
+                        CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size + I+1].Type = BOUNDARY;
+                    }
+                    else
+                    {
+                        CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size + I].Type = BOUNDARY;
+                    }
+                    //CurrentGrid->Cells[(NumberOfRowsRoot-1)*LocalGrid.Size + I].Type = BOUNDARY;
+                }
+            }
+        }
+        else
+        {
+            for(u32 I = 1; I < CurrentGrid->Size-1; ++I)
+            {
+                if(NeighbourRowTop[I].Type == FROZEN)
+                {
+                    if(I % 2 == 0)
+                    {
+                        CurrentGrid->Cells[I].Type = BOUNDARY;
+                        CurrentGrid->Cells[I+1].Type = BOUNDARY;
+                        CurrentGrid->Cells[I-1].Type = BOUNDARY;
+                    }
+                    else
+                    {
+                        CurrentGrid->Cells[I].Type = BOUNDARY;
+                    }
+                    //CurrentGrid->Cells[I].Type = BOUNDARY;
+                }
+            }
+            for(u32 I = 1; I < CurrentGrid->Size-1; ++I)
+            {
+                if(NeighbourRowBottom[I].Type == FROZEN)
+                {
+                    if(I % 2 == 0)
+                    {
+                        CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size + I].Type = BOUNDARY;
+                        CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size + I+1].Type = BOUNDARY;
+                        CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size + I-1].Type = BOUNDARY;
+                    }
+                    else
+                    {
+                        CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size + I].Type = BOUNDARY;
+                    }
+                    //CurrentGrid->Cells[(NumberOfRows-1)*LocalGrid.Size + I].Type = BOUNDARY;
+                }
+            }
+        }
+#endif
+
+        // TODO(miha): Can we get away without copying memory? (set the seed for
+        // the middle row?, if CurrentGrid[Row, Col].Type is FROZEN, set
+        // NextGrid[ROW, COL] = FROZEN, ...)
+#if 1
+        if(Rank == 0)
+        {
+            //memcpy(des, src, size);
+            //for(u32 I = 0; I < 140; ++I)
+            //    CurrentGrid->Cells[(NumberOfRowsRoot-1)*CurrentGrid->Size+I].Type = EDGE;
+            memcpy(NextGrid->Cells, CurrentGrid->Cells, NumberOfRowsRoot*LocalGrid.Size*sizeof(cell));
+        }
+        else
+        {
+            //for(u32 I = 0; I < 140; ++I)
+            //    CurrentGrid->Cells[(NumberOfRows-1)*CurrentGrid->Size+I].Type = EDGE;
+            memcpy(NextGrid->Cells, CurrentGrid->Cells, NumberOfRows*LocalGrid.Size*sizeof(cell));
+        }
+#endif
 
         // NOTE(miha): Iterate all cells.
         u32 MaxColumn = 0;
         if(Rank == 0)
         {
             // NOTE(miha): Root process has different amount of rows than other processes.
-            for(u32 Row = 0; Row < NumberOfRowsRoot; ++Row)
+            for(u32 Row = 0; Row < (u32)NumberOfRowsRoot; ++Row)
             {
                 for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
                 {
-#if 0
                     cell Cell = GridElement(CurrentGrid, Row, Column);
                     // NOTE(miha): Give EDGE cells Beta amount of water.
                     if(Cell.Type == EDGE)
@@ -282,6 +367,9 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Value = Beta;
                         continue;
                     }
+
+                    if(CurrentGrid->Cells[Row * CurrentGrid->Size + Column].Value > 1.0f)
+                        CurrentGrid->Cells[Row * CurrentGrid->Size + Column].Type = FROZEN;
 
                     // NOTE(miha): New water value for the cell.
                     f32 NewWaterValue = 0.0f;
@@ -294,14 +382,22 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRowsRoot + 1 || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
+                            //printf("neigbour.row: %d, neighbour.column: %d\n", Neighbour.Row, Neighbour.Column);
+                            if(Neighbour.Row < 0 || Neighbour.Column < 0 || Neighbour.Column >= (i32)CurrentGrid->Size)
                                 continue;
 
                             cell NeighbourCell;
-                            if(Neighbour.Row == NumberOfRowsRoot + 1)
+                            if(Neighbour.Row == NumberOfRowsRoot)
                             {
+                                //printf("bottom neighbour\n");
                                 // NOTE(miha): Cell is on the neighbor at the bottom.
                                 NeighbourCell = NeighbourRowBottom[Neighbour.Column];
+                                //NeighbourCell = GridElement(CurrentGrid, 0, Neighbour.Column);
+                                //continue;
+                            }
+                            else if(Neighbour.Row > NumberOfRowsRoot)
+                            {
+                                continue;
                             }
                             else
                             {
@@ -326,14 +422,20 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRowsRoot + 1 || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
+                            if(Neighbour.Row < 0 || Neighbour.Column < 0 || Neighbour.Column > (i32)CurrentGrid->Size)
                                 continue;
-
                             cell NeighbourCell;
-                            if(Neighbour.Row == NumberOfRowsRoot + 1)
+                            if(Neighbour.Row == NumberOfRowsRoot)
                             {
+                                //printf("bottom neighbour\n");
                                 // NOTE(miha): Cell is on the neighbor at the bottom.
                                 NeighbourCell = NeighbourRowBottom[Neighbour.Column];
+                                //NeighbourCell = GridElement(CurrentGrid, 0, Neighbour.Column);
+                                //continue;
+                            }
+                            else if(Neighbour.Row > NumberOfRowsRoot)
+                            {
+                                continue;
                             }
                             else
                             {
@@ -357,9 +459,10 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRowsRoot + 1 || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
+                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRowsRoot || Neighbour.Column < 0 || Neighbour.Column > (i32)CurrentGrid->Size)
                                 continue;
 
+                            // return Grid->Cells[Row*Grid->Size + Column];
                             cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
                             if(NeighbourCell.Type == EDGE)
                             {
@@ -367,19 +470,19 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                                     MaxColumn = Column;
                                 continue;
                             }
-
                             if(!IsReceptive(NeighbourCell))
-                                NextGrid->Cells[Neighbour.Row*NextGrid->Size + Neighbour.Column].Type = BOUNDARY;
+                            {
+                                NextGrid->Cells[(Neighbour.Row)*NextGrid->Size + Neighbour.Column].Type = BOUNDARY;
+                            }
                         }
                     }
-#endif
                 }
             }
         }
         else
         {
             // NOTE(miha): Non root processes.
-            for(u32 Row = 0; Row < NumberOfRows; ++Row)
+            for(u32 Row = 0; Row < (u32)NumberOfRows; ++Row)
             {
                 for(u32 Column = 0; Column < CurrentGrid->Size; ++Column)
                 {
@@ -390,6 +493,23 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         CurrentGrid->Cells[Row*CurrentGrid->Size + Column].Value = Beta;
                         continue;
                     }
+
+                    if(CurrentGrid->Cells[Row * CurrentGrid->Size + Column].Value > 1.0f)
+                    {
+                        //CurrentGrid->Cells[Row * CurrentGrid->Size + Column].Type = FROZEN;
+                        for(u32 Direction = 0; Direction < 6; ++Direction)
+                        {
+                            ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
+                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRows || Neighbour.Column < 0 || Neighbour.Column > (i32)CurrentGrid->Size)
+                                continue;
+
+                            cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
+                            if(NeighbourCell.Type == FROZEN)
+                                CurrentGrid->Cells[Row * CurrentGrid->Size + Column].Type = FROZEN;
+                                //NextGrid->Cells[(Neighbour.Row)*NextGrid->Size + Neighbour.Column].Type = FROZEN;
+                        }
+                    }
+                    // TODO(miha): Set neighbours to boundary if not frozen?
 
                     // NOTE(miha): New water value for the cell.
                     f32 NewWaterValue = 0.0f;
@@ -402,19 +522,25 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < -1 || Neighbour.Row > NumberOfRows + 1 || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
+                            if(Neighbour.Column < 0 || Neighbour.Column > (i32)CurrentGrid->Size)
                                 continue;
 
                             cell NeighbourCell;
-                            if(Neighbour.Row == -1)
+                            if(Neighbour.Row == NumberOfRows)
                             {
-                                // NOTE(miha): Cell is on the neighbor at the top.
+                                NeighbourCell = NeighbourRowBottom[Neighbour.Column];
+                            }
+                            else if(Neighbour.Row > NumberOfRows)
+                            {
+                                continue;
+                            }
+                            else if(Neighbour.Row == -1)
+                            {
                                 NeighbourCell = NeighbourRowTop[Neighbour.Column];
                             }
-                            else if(Neighbour.Row == NumberOfRows + 1 && Rank != NumberOfProcesses-1)
+                            else if(Neighbour.Row < -1)
                             {
-                                // NOTE(miha): Cell is on the neighbor at the bottom.
-                                NeighbourCell = NeighbourRowBottom[Neighbour.Column];
+                                continue;
                             }
                             else
                             {
@@ -439,19 +565,25 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < -1 || Neighbour.Row > NumberOfRows + 1 || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
+                            if(Neighbour.Column < 0 || Neighbour.Column > (i32)CurrentGrid->Size)
                                 continue;
 
                             cell NeighbourCell;
-                            if(Neighbour.Row == -1)
+                            if(Neighbour.Row == NumberOfRows)
                             {
-                                // NOTE(miha): Cell is on the neighbor at the top.
+                                NeighbourCell = NeighbourRowBottom[Neighbour.Column];
+                            }
+                            else if(Neighbour.Row > NumberOfRows)
+                            {
+                                continue;
+                            }
+                            else if(Neighbour.Row == -1)
+                            {
                                 NeighbourCell = NeighbourRowTop[Neighbour.Column];
                             }
-                            else if(Neighbour.Row == NumberOfRows + 1 && Rank != NumberOfProcesses-1)
+                            else if(Neighbour.Row < -1)
                             {
-                                // NOTE(miha): Cell is on the neighbor at the bottom.
-                                NeighbourCell = NeighbourRowBottom[Neighbour.Column];
+                                continue;
                             }
                             else
                             {
@@ -466,7 +598,6 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         NeighbourDiffusion /= 6.0f;
                         NewWaterValue += (Alpha/2.0f)*(NeighbourDiffusion - Cell.Value);
                     }
-
                     // NOTE(miha): Update new grid.
                     NextGrid->Cells[Row*NextGrid->Size + Column].Value = NewWaterValue;
                     if(NewWaterValue > 1.0f)
@@ -475,7 +606,7 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                         for(u32 Direction = 0; Direction < 6; ++Direction)
                         {
                             ivec2 Neighbour = GridNeighbour(Row, Column, Direction);
-                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRows || Neighbour.Column < 0 || Neighbour.Column > CurrentGrid->Size)
+                            if(Neighbour.Row < 0 || Neighbour.Row > NumberOfRows || Neighbour.Column < 0 || Neighbour.Column > (i32)CurrentGrid->Size)
                                 continue;
 
                             cell NeighbourCell = GridElement(CurrentGrid, Neighbour.Row, Neighbour.Column);
@@ -486,12 +617,15 @@ main(i32 ArgumentCount, char *ArgumentValues[])
                                 continue;
                             }
                             if(!IsReceptive(NeighbourCell))
-                                NextGrid->Cells[Neighbour.Row*NextGrid->Size + Neighbour.Column].Type = BOUNDARY;
+                            {
+                                NextGrid->Cells[(Neighbour.Row)*NextGrid->Size + Neighbour.Column].Type = BOUNDARY;
+                            }
                         }
                     }
                 }
             }
         }
+
         // NOTE(miha): Switch grids.
         grid *Temp = NextGrid;
         NextGrid = CurrentGrid;
@@ -506,10 +640,8 @@ main(i32 ArgumentCount, char *ArgumentValues[])
         */
         //if(FromIterations && Iteration - FromIterations > 20)
         //    Running = 0;
-        if(Iteration > 100)
+        if(Iteration > 60)
         {
-            if(Rank == 0)
-                printf("someting is happening\n");
             Running = 0;
         }
 
@@ -523,17 +655,21 @@ main(i32 ArgumentCount, char *ArgumentValues[])
             stbi_write_png(FileNameBuffer, Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
         }
 #endif
+        //printf("iteration: %d\n", Iteration);
         Iteration++;
     }
     printf("my rank is: %d, my rows: %d\n", Rank, SendCount[Rank]);
 
-#if 0
-#endif
-
     //MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Gatherv(CurrentGrid->Cells, SendCount[Rank], mpi_cell, Grid.Cells, SendCount, Displacement, mpi_cell, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(NextGrid->Cells, SendCount[Rank], mpi_cell, Grid.Cells, SendCount, Displacement, mpi_cell, 0, MPI_COMM_WORLD);
 
-    if(0 && Rank == 0)
+    MPI_Barrier(MPI_COMM_WORLD);
+    End = MPI_Wtime();
+
+    if(Rank == 0)
+        printf("Execution time: %lf\n", End-Start);
+
+    if(1 && Rank == 0)
     {
         image Image = {};
         Image.ToPixelMultiplier = Grid.CellSize;
@@ -542,10 +678,12 @@ main(i32 ArgumentCount, char *ArgumentValues[])
         Image.Height = Grid.Size * sqrtf(3) * Image.ToPixelMultiplier;
         u8 *ImagePixels = (u8 *)malloc(Image.Width*Image.Height*Image.ChannelsPerPixel);
         Image.Pixels = ImagePixels;
-        DrawGrid(CurrentGrid, &Image);
+        DrawGrid(&Grid, &Image);
         stbi_write_png("out_basic_openmpi.png", Image.Width, Image.Height, Image.ChannelsPerPixel, Image.Pixels, Image.Width*Image.ChannelsPerPixel);
     }
 
-    MPI_Type_free(&mpi_cell);
+    //MPI_Type_free(&mpi_cell);
     MPI_Finalize();
+
+    return 0;
 }
